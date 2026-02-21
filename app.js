@@ -1,5 +1,6 @@
 const WS_ENDPOINTS = ["wss://ws.reya.xyz", "wss://websocket-testnet.reya.xyz"];
 const API_ENDPOINTS = ["https://api.reya.xyz", "https://reya.xyz/api"];
+
 const WS_TOPICS = (wallet) => [
   `/v2/wallet/${wallet}/positions`,
   `/v2/wallet/${wallet}/perpExecutions`,
@@ -14,18 +15,14 @@ const state = {
   reconnectCount: 0,
   endpointIndex: 0,
   heartbeatInterval: null,
-  seenTransfers: new Set(),
+
   positions: new Map(),
   trades: [],
   spot: [],
   transfers: [],
   prices: {},
   marketSummary: {},
-  kpis: {
-    totalOnAccount: null,
-    marginUsage: null,
-    collateralNow: null,
-    unrealizedPnl: null
+
   }
 };
 
@@ -116,23 +113,6 @@ function inferPositionSide(item) {
   return size < 0 ? "Short" : "Long";
 }
 
-function parseTransferType(row) {
-  const hints = [
-    row.type,
-    row.action,
-    row.flow,
-    row.direction,
-    row.isDeposit ? "deposit" : null,
-    row.isWithdrawal ? "withdrawal" : null
-  ].filter(Boolean).join(" ").toLowerCase();
-  if (hints.includes("deposit") || hints.includes("in")) return "Deposit";
-  if (hints.includes("withdraw") || hints.includes("out")) return "Withdrawal";
-  return "Transfer";
-}
-
-function dedupeTransferKey(row) {
-  return [row.txHash || row.transactionHash || "nohash", row.asset || row.symbol || "asset", parseTs(row.timestamp || row.time || row.createdAt) || 0, toNumber(row.amount || row.size || row.value) || 0].join("|");
-}
 
 function normalizePosition(raw) {
   const market = raw.market || raw.symbol || raw.marketId || "Unknown";
@@ -177,13 +157,7 @@ function normalizeSpot(raw) {
   };
 }
 
-function normalizeTransfer(raw) {
-  return {
-    time: parseTs(raw.timestamp || raw.time || raw.createdAt || raw.blockTime),
-    type: parseTransferType(raw),
-    asset: raw.asset || raw.symbol || raw.token || "—",
-    amount: toNumber(raw.amount, raw.size, raw.value),
-    txHash: raw.txHash || raw.transactionHash || raw.hash || "—"
+
   };
 }
 
@@ -210,37 +184,17 @@ function mergeSpot(rows) {
     .sort((a, b) => (b.time || 0) - (a.time || 0));
 }
 
-function mergeTransfers(rows) {
-  for (const row of rows) {
-    const key = dedupeTransferKey(row);
-    if (state.seenTransfers.has(key)) continue;
-    state.seenTransfers.add(key);
-    state.transfers.push(normalizeTransfer(row));
-  }
-  state.transfers = state.transfers
-    .sort((a, b) => (b.time || 0) - (a.time || 0))
-    .slice(0, 500);
-}
 
 function updateKpis() {
   const positions = [...state.positions.values()];
   const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
   const unrealized = positions.reduce((sum, p) => sum + (p.pnl || 0), 0);
-  const collateral = toNumber(state.marketSummary.collateralNow, state.marketSummary.collateral, totalValue + unrealized);
-  const total = toNumber(state.marketSummary.totalOnAccount, state.marketSummary.totalAccountValue, totalValue);
-  const margin = toNumber(state.marketSummary.marginUsage, state.marketSummary.marginUsed, total ? ((totalValue / total) * 100) : null);
-
-  state.kpis = {
-    totalOnAccount: total,
-    marginUsage: margin,
-    collateralNow: collateral,
-    unrealizedPnl: unrealized
-  };
+in
 
   ui.kpi.total.textContent = formatUsd(total);
   ui.kpi.margin.textContent = margin === null ? "—" : `${formatNum(margin, 2)}%`;
   ui.kpi.collateral.textContent = formatUsd(collateral);
-  ui.kpi.unrealized.textContent = formatUsd(unrealized);
+
   ui.kpi.unrealized.className = unrealized >= 0 ? "pnl-pos" : "pnl-neg";
 }
 
@@ -310,13 +264,7 @@ function renderAll() {
     state.transfers,
     (t) => `<tr>
       <td>${t.time ? new Date(t.time).toLocaleString() : "—"}</td>
-      <td>${t.type}</td>
-      <td>${t.asset}</td>
-      <td>${formatNum(t.amount, 6)}</td>
-      <td>${t.txHash === "—" ? "—" : `<a href="https://etherscan.io/tx/${t.txHash}" target="_blank" rel="noopener noreferrer">${t.txHash.slice(0, 10)}…</a>`}</td>
-    </tr>`,
-    ui.empties.transfers,
-    "No deposits/withdrawals detected."
+
   );
 
   updateKpis();
@@ -327,7 +275,7 @@ function parseResponseByIntent(intent, payload) {
   if (intent === "positions") mergePositions(rows);
   if (intent === "trades") mergeTrades(rows);
   if (intent === "spot") mergeSpot(rows);
-  if (intent === "transfers") mergeTransfers(rows);
+
   if (intent === "prices") {
     rows.forEach((r) => {
       const key = r.market || r.symbol;
@@ -353,7 +301,7 @@ async function fetchFirst(pathsByIntent) {
           parseResponseByIntent(intent, await res.json());
           done = true;
         } catch {
-          // continue probing remaining endpoints
+
         }
       }
     }
@@ -362,6 +310,7 @@ async function fetchFirst(pathsByIntent) {
 
   renderAll();
 }
+
 
 function wsSend(topic) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
@@ -386,9 +335,7 @@ function handleWsMessage(event) {
   else if (topic.includes("perpExecutions")) mergeTrades(rows);
   else if (topic.includes("orderChanges")) {
     mergeSpot(rows.filter((r) => String(r.marketType || r.type || "").toLowerCase().includes("spot")));
-    mergeTransfers(rows.filter((r) => String(r.type || r.action || "").toLowerCase().match(/deposit|withdraw|transfer/)));
-  }
-  else if (topic.includes("prices")) parseResponseByIntent("prices", envelope);
+
   else if (topic.includes("markets/summary")) parseResponseByIntent("summary", envelope);
   else {
     mergePositions(rows.filter((r) => r.market || r.positionSize));
@@ -401,7 +348,7 @@ function handleWsMessage(event) {
 function connectWs() {
   if (!state.wallet) return;
   const endpoint = WS_ENDPOINTS[state.endpointIndex % WS_ENDPOINTS.length];
-  setStatus(`Connecting (${state.endpointIndex % WS_ENDPOINTS.length + 1}/${WS_ENDPOINTS.length})`, `Opening WebSocket ${endpoint}`);
+
   const ws = new WebSocket(endpoint);
   state.ws = ws;
 
@@ -438,7 +385,7 @@ function resetWalletState() {
   state.transfers = [];
   state.prices = {};
   state.marketSummary = {};
-  state.seenTransfers = new Set();
+
 }
 
 async function loadWallet(wallet) {
@@ -448,17 +395,6 @@ async function loadWallet(wallet) {
   url.searchParams.set("wallet", wallet);
   history.replaceState({}, "", url.toString());
 
-  setStatus("Loading", "Fetching REST snapshots...");
-  renderAll();
-
-  await fetchFirst({
-    positions: [`/v2/wallet/${wallet}/positions`],
-    trades: [`/v2/wallet/${wallet}/perpExecutions`],
-    spot: [`/v2/wallet/${wallet}/spotExecutions`, `/v2/wallet/${wallet}/orderChanges`],
-    transfers: [`/v2/wallet/${wallet}/transfers`, `/v2/wallet/${wallet}/orderChanges`],
-    prices: ["/v2/prices"],
-    summary: ["/v2/markets/summary"]
-  });
 
   connectWs();
 }
