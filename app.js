@@ -1,9 +1,5 @@
 const WS_ENDPOINTS = ["wss://ws.reya.xyz", "wss://websocket-testnet.reya.xyz"];
 const API_ENDPOINTS = ["https://api.reya.xyz", "https://reya.xyz/api"];
-const EXPLORER_API = "https://explorer.reya.network/api";
-const REYA_RPC = "https://rpc.reya.network";
-const REYA_USDC = "0x3B860c0b53f2e8bd5264AA7c3451d41263C933F2".toLowerCase();
-const SOCKET_CONTRACT = "0x1d43076909ca139bfac4ebb7194518be3638fc76";
 
 const WS_TOPICS = (wallet) => [
   `/v2/wallet/${wallet}/positions`,
@@ -19,20 +15,14 @@ const state = {
   reconnectCount: 0,
   endpointIndex: 0,
   heartbeatInterval: null,
+
   positions: new Map(),
   trades: [],
   spot: [],
   transfers: [],
   prices: {},
   marketSummary: {},
-  balances: {
-    walletUsdc: null,
-    dexBalance: null
-  },
-  bridgeTotals: {
-    deposits: 0,
-    withdrawals: 0,
-    net: 0
+
   }
 };
 
@@ -123,6 +113,7 @@ function inferPositionSide(item) {
   return size < 0 ? "Short" : "Long";
 }
 
+
 function normalizePosition(raw) {
   const market = raw.market || raw.symbol || raw.marketId || "Unknown";
   const side = inferPositionSide(raw);
@@ -166,30 +157,7 @@ function normalizeSpot(raw) {
   };
 }
 
-function toDecimalAmount(rawValue, decimals = 6) {
-  if (rawValue === null || rawValue === undefined) return null;
-  const parsed = String(rawValue).replace(/[^0-9-]/g, "");
-  if (!parsed) return null;
-  const bigint = BigInt(parsed);
-  const scale = 10n ** BigInt(decimals);
-  const whole = bigint / scale;
-  const fractional = Number(bigint % scale) / Number(scale);
-  return Number(whole) + fractional;
-}
 
-function normalizeBridgeTransfer(raw) {
-  const from = String(raw.from || "").toLowerCase();
-  const to = String(raw.to || "").toLowerCase();
-  const amount = toDecimalAmount(raw.value, Number(raw.tokenDecimal) || 6);
-  const type = to === SOCKET_CONTRACT ? "Withdrawal" : from === SOCKET_CONTRACT ? "Deposit" : "Transfer";
-  return {
-    time: parseTs(raw.timeStamp || raw.timestamp || raw.time),
-    type,
-    asset: raw.tokenSymbol || raw.asset || "USDC",
-    amount,
-    txHash: raw.hash || raw.transactionHash || "—",
-    from,
-    to
   };
 }
 
@@ -216,33 +184,17 @@ function mergeSpot(rows) {
     .sort((a, b) => (b.time || 0) - (a.time || 0));
 }
 
+
 function updateKpis() {
   const positions = [...state.positions.values()];
   const totalValue = positions.reduce((sum, p) => sum + (p.value || 0), 0);
   const unrealized = positions.reduce((sum, p) => sum + (p.pnl || 0), 0);
-  const margin = toNumber(
-    state.marketSummary.marginUsage,
-    state.marketSummary.marginUsed,
-    state.marketSummary.totalOnAccount ? (totalValue / state.marketSummary.totalOnAccount) * 100 : null
-  );
-
-  const total = toNumber(
-    state.balances.dexBalance,
-    state.marketSummary.totalOnAccount,
-    state.marketSummary.totalAccountValue,
-    totalValue
-  );
-  const collateral = toNumber(
-    state.balances.walletUsdc,
-    state.marketSummary.collateralNow,
-    state.marketSummary.collateral,
-    totalValue + unrealized
-  );
+in
 
   ui.kpi.total.textContent = formatUsd(total);
   ui.kpi.margin.textContent = margin === null ? "—" : `${formatNum(margin, 2)}%`;
   ui.kpi.collateral.textContent = formatUsd(collateral);
-  ui.kpi.unrealized.textContent = `${formatUsd(unrealized)} (Net bridged: ${formatUsd(state.bridgeTotals.net)})`;
+
   ui.kpi.unrealized.className = unrealized >= 0 ? "pnl-pos" : "pnl-neg";
 }
 
@@ -312,13 +264,7 @@ function renderAll() {
     state.transfers,
     (t) => `<tr>
       <td>${t.time ? new Date(t.time).toLocaleString() : "—"}</td>
-      <td class="${t.type === "Deposit" ? "side-buy" : "side-sell"}">${t.type}</td>
-      <td>${t.asset}</td>
-      <td>${formatNum(t.amount, 6)}</td>
-      <td>${t.txHash === "—" ? "—" : `<a href="https://explorer.reya.network/tx/${t.txHash}" target="_blank" rel="noopener noreferrer">${t.txHash.slice(0, 10)}…</a>`}</td>
-    </tr>`,
-    ui.empties.transfers,
-    "No bridge deposits/withdrawals found for Reya USDC."
+
   );
 
   updateKpis();
@@ -329,6 +275,7 @@ function parseResponseByIntent(intent, payload) {
   if (intent === "positions") mergePositions(rows);
   if (intent === "trades") mergeTrades(rows);
   if (intent === "spot") mergeSpot(rows);
+
   if (intent === "prices") {
     rows.forEach((r) => {
       const key = r.market || r.symbol;
@@ -354,7 +301,7 @@ async function fetchFirst(pathsByIntent) {
           parseResponseByIntent(intent, await res.json());
           done = true;
         } catch {
-          // ignore and continue
+
         }
       }
     }
@@ -364,137 +311,6 @@ async function fetchFirst(pathsByIntent) {
   renderAll();
 }
 
-async function fetchBridgeTransfers(wallet) {
-  const url = `${EXPLORER_API}?${new URLSearchParams({
-    module: "account",
-    action: "tokentx",
-    address: wallet,
-    contractaddress: REYA_USDC,
-    sort: "desc"
-  }).toString()}`;
-
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return;
-    const payload = await res.json();
-    const rows = ensureArray(payload.result || payload.data || payload.items);
-    const normalized = rows.map(normalizeBridgeTransfer)
-      .filter((t) => t.type === "Deposit" || t.type === "Withdrawal");
-
-    state.transfers = normalized
-      .sort((a, b) => (b.time || 0) - (a.time || 0))
-      .slice(0, 500);
-
-    state.bridgeTotals.deposits = state.transfers
-      .filter((t) => t.type === "Deposit")
-      .reduce((sum, t) => sum + (t.amount || 0), 0);
-    state.bridgeTotals.withdrawals = state.transfers
-      .filter((t) => t.type === "Withdrawal")
-      .reduce((sum, t) => sum + (t.amount || 0), 0);
-    state.bridgeTotals.net = state.bridgeTotals.deposits - state.bridgeTotals.withdrawals;
-  } catch {
-    setStatus(null, "Could not fetch Reya explorer transfer history.");
-  }
-}
-
-async function fetchWalletUsdcBalance(wallet) {
-  try {
-    const paddedAddress = wallet.toLowerCase().replace("0x", "").padStart(64, "0");
-    const res = await fetch(REYA_RPC, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_call",
-        params: [{ to: REYA_USDC, data: `0x70a08231${paddedAddress}` }, "latest"]
-      })
-    });
-    const payload = await res.json();
-    if (!payload?.result) return;
-    state.balances.walletUsdc = Number(BigInt(payload.result) / 1000000n) + Number(BigInt(payload.result) % 1000000n) / 1e6;
-  } catch {
-    setStatus(null, "Could not fetch on-chain Reya USDC wallet balance.");
-  }
-}
-
-function pickBalanceValue(row) {
-  return toNumber(
-    row.collateral,
-    row.balance,
-    row.totalBalance,
-    row.equity,
-    row.accountValue,
-    row.usdcBalance,
-    row.freeCollateral,
-    row.amount
-  );
-}
-
-async function fetchDexBalance(wallet) {
-  const walletAccountPaths = [
-    `/v2/wallet/${wallet}/accounts`,
-    `/v2/wallet/${wallet}/accountIds`,
-    `/v2/wallet/${wallet}/balances`
-  ];
-  const accountBalancePatterns = [
-    (id) => `/v2/wallet/${wallet}/accounts/${id}/balances`,
-    (id) => `/v2/accounts/${id}/balances`
-  ];
-
-  let accounts = [];
-  for (const base of API_ENDPOINTS) {
-    for (const path of walletAccountPaths) {
-      try {
-        const res = await fetch(`${base}${path}`);
-        if (!res.ok) continue;
-        const body = await res.json();
-        const rows = ensureArray(parseEnvelope(body));
-        if (path.includes("balances")) {
-          const values = rows.map(pickBalanceValue).filter((v) => v !== null);
-          if (values.length) {
-            state.balances.dexBalance = values.reduce((s, v) => s + v, 0);
-            return;
-          }
-        }
-        accounts = rows
-          .map((r) => r.accountId || r.id || r.account || r.subAccountId)
-          .filter(Boolean);
-        if (accounts.length) break;
-      } catch {
-        // try next path
-      }
-    }
-    if (accounts.length) {
-      let total = 0;
-      let found = false;
-      for (const id of accounts) {
-        for (const pattern of accountBalancePatterns) {
-          try {
-            const res = await fetch(`${base}${pattern(id)}`);
-            if (!res.ok) continue;
-            const body = await res.json();
-            const rows = ensureArray(parseEnvelope(body));
-            const values = rows.map(pickBalanceValue).filter((v) => v !== null);
-            if (values.length) {
-              total += values.reduce((s, v) => s + v, 0);
-              found = true;
-              break;
-            }
-          } catch {
-            // continue
-          }
-        }
-      }
-      if (found) {
-        state.balances.dexBalance = total;
-        return;
-      }
-    }
-  }
-
-  setStatus(null, "DEX account balance endpoint unavailable; using market summary fallback.");
-}
 
 function wsSend(topic) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
@@ -519,7 +335,7 @@ function handleWsMessage(event) {
   else if (topic.includes("perpExecutions")) mergeTrades(rows);
   else if (topic.includes("orderChanges")) {
     mergeSpot(rows.filter((r) => String(r.marketType || r.type || "").toLowerCase().includes("spot")));
-  } else if (topic.includes("prices")) parseResponseByIntent("prices", envelope);
+
   else if (topic.includes("markets/summary")) parseResponseByIntent("summary", envelope);
   else {
     mergePositions(rows.filter((r) => r.market || r.positionSize));
@@ -532,7 +348,7 @@ function handleWsMessage(event) {
 function connectWs() {
   if (!state.wallet) return;
   const endpoint = WS_ENDPOINTS[state.endpointIndex % WS_ENDPOINTS.length];
-  setStatus(`Connecting (${(state.endpointIndex % WS_ENDPOINTS.length) + 1}/${WS_ENDPOINTS.length})`, `Opening WebSocket ${endpoint}`);
+
   const ws = new WebSocket(endpoint);
   state.ws = ws;
 
@@ -569,8 +385,7 @@ function resetWalletState() {
   state.transfers = [];
   state.prices = {};
   state.marketSummary = {};
-  state.balances = { walletUsdc: null, dexBalance: null };
-  state.bridgeTotals = { deposits: 0, withdrawals: 0, net: 0 };
+
 }
 
 async function loadWallet(wallet) {
@@ -580,23 +395,7 @@ async function loadWallet(wallet) {
   url.searchParams.set("wallet", wallet);
   history.replaceState({}, "", url.toString());
 
-  setStatus("Loading", "Fetching snapshots, bridge transfers, and balances...");
-  renderAll();
 
-  await Promise.all([
-    fetchFirst({
-      positions: [`/v2/wallet/${wallet}/positions`],
-      trades: [`/v2/wallet/${wallet}/perpExecutions`],
-      spot: [`/v2/wallet/${wallet}/spotExecutions`, `/v2/wallet/${wallet}/orderChanges`],
-      prices: ["/v2/prices"],
-      summary: ["/v2/markets/summary"]
-    }),
-    fetchBridgeTransfers(wallet),
-    fetchWalletUsdcBalance(wallet),
-    fetchDexBalance(wallet)
-  ]);
-
-  renderAll();
   connectWs();
 }
 

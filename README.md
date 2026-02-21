@@ -37,30 +37,3 @@ Because this app uses browser fetch + websockets, run from a local server (not `
 ```bash
 python3 -m http.server 8080
 # Open http://localhost:8080
-```
-
-Or use any static server.
-
-## Deploy on GitHub Pages
-This repository includes `.github/workflows/deploy-pages.yml`.
-
-- Deploy triggers on push to `main` or `master`.
-- Workflow uses:
-  - `actions/checkout@v4`
-  - `actions/configure-pages@v5`
-  - `actions/upload-pages-artifact@v4`
-  - `actions/deploy-pages@v4`
-
-## Troubleshooting Pages
-1. **404 on Pages URL**
-   - Confirm repository **Settings → Pages → Source** is set to **GitHub Actions**.
-2. **Workflow succeeds but site is stale**
-   - Hard refresh browser cache.
-   - Confirm latest commit was pushed to `main`/`master`.
-3. **Missing deposit/withdrawal history**
-   - Verify wallet has Reya USDC transfers in explorer.
-   - Only bridge transfers are shown (`from/to` Socket contract).
-4. **API/WS partial data**
-   - UI still renders available sections and falls back where possible.
-5. **Wallet won’t load**
-   - Ensure wallet matches exact EVM format (42 chars total, `0x` prefix).
