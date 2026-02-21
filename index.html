@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reya Wallet Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="header">
+      <div>
+        <h1>Reya Wallet Dashboard</h1>
+        <p class="subtitle">Live wallet analytics for Reya markets</p>
+      </div>
+      <div class="wallet-controls">
+        <label for="walletInput">Wallet</label>
+        <div class="input-row">
+          <input id="walletInput" type="text" placeholder="0x..." autocomplete="off" />
+          <button id="loadWalletBtn">Load</button>
+        </div>
+        <p id="walletError" class="error hidden"></p>
+      </div>
+    </header>
+
+    <section class="status-row">
+      <span id="connectionStatus" class="status-pill">Idle</span>
+      <span id="dataStatus" class="status-text">Waiting for wallet input.</span>
+    </section>
+
+    <section class="kpi-grid" id="kpiGrid">
+      <article class="kpi-card">
+        <h2>Total On Account (DEX)</h2>
+        <p id="kpiTotal">—</p>
+      </article>
+      <article class="kpi-card">
+        <h2>Margin Usage</h2>
+        <p id="kpiMargin">—</p>
+      </article>
+      <article class="kpi-card">
+        <h2>Collateral Now (Wallet USDC)</h2>
+        <p id="kpiCollateral">—</p>
+      </article>
+      <article class="kpi-card">
+        <h2>Unrealized PnL</h2>
+        <p id="kpiUnrealized">—</p>
+      </article>
+    </section>
+
+    <section class="tabs-panel">
+      <nav class="tabs" aria-label="Dashboard sections">
+        <button class="tab active" data-tab="positions">Positions</button>
+        <button class="tab" data-tab="trades">Trade History PnL</button>
+        <button class="tab" data-tab="spot">Spot Buys/Sells</button>
+        <button class="tab" data-tab="transfers">Deposits/Withdrawals</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-positions">
+        <table>
+          <thead>
+            <tr>
+              <th>Market</th>
+              <th>Side</th>
+              <th>Size</th>
+              <th>Account ID</th>
+              <th>Value</th>
+              <th>Live PnL</th>
+              <th>Mark</th>
+              <th>Entry</th>
+            </tr>
+          </thead>
+          <tbody id="positionsBody"></tbody>
+        </table>
+        <p id="positionsEmpty" class="empty">Enter a wallet to load positions.</p>
+      </div>
+
+      <div class="tab-content" id="tab-trades">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Market</th>
+              <th>Side</th>
+              <th>Size</th>
+              <th>Price</th>
+              <th>Fee</th>
+              <th>P/L</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+        <p id="tradesEmpty" class="empty">No trade history yet.</p>
+      </div>
+
+      <div class="tab-content" id="tab-spot">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Market/Asset</th>
+              <th>Side</th>
+              <th>Size</th>
+              <th>Price</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody id="spotBody"></tbody>
+        </table>
+        <p id="spotEmpty" class="empty">No spot buy/sell history available.</p>
+      </div>
+
+      <div class="tab-content" id="tab-transfers">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Asset</th>
+              <th>Amount</th>
+              <th>Tx Hash</th>
+            </tr>
+          </thead>
+          <tbody id="transfersBody"></tbody>
+        </table>
+        <p id="transfersEmpty" class="empty">No deposits/withdrawals found.</p>
+      </div>
+    </section>
+  </div>
+
+  <footer class="footer">build by <a href="https://x.com/iam_miyulux" target="_blank" rel="noopener noreferrer">miyulux</a></footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
